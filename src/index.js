@@ -116,7 +116,7 @@ app.post('/rf', (req, res) => {
 
   const options = {
       mode: 'json',
-      scriptPath: '/src/utils',
+      scriptPath: path.resolve(__dirname, './utils'),
       args: [JSON.stringify(inputData)]
   };
 
