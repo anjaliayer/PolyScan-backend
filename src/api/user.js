@@ -7,6 +7,9 @@ const User = require("../models/schema");
 // mongodb user verification model
 const UserVerification = require("../models/UserVerification");
 
+//mongodb user otp verification model
+const UserOTPVerification = require("./../models/UserOTPVerification");
+
 // mongodb user verification model
 const PasswordReset = require("../models/PasswordReset");
 const Doctors = require("../models/Doctors");
@@ -28,6 +31,7 @@ const bcrypt = require("bcrypt");
 //path for static verified page
 const path = require("path");
 const { json } = require("body-parser");
+const { Error } = require("mongoose");
 
 //nodemailer stuff
 const transporter = nodemailer.createTransport({
@@ -52,91 +56,390 @@ transporter.verify((error, sucess) => {
   }
 });
 
-//Signup
-router.post("/signup", (req, res) => {
+//setting server url
+const development = "http://localhost:5000/";
+ const currentUrl = process.env;
+
+
+
+router.post("/signup", async (req, res) => {
   let { name, email, password, dateOfBirth } = req.body;
-  console.log(/^[a-zA-Z, ]*$/.test(name));
 
   name = name.trim();
   email = email.trim();
   password = password.trim();
   dateOfBirth = dateOfBirth.trim();
 
-  if (name == "" || email == "" || password == "" ) {
-    res.json({
+  if (name === "" || email === "" || password === "") {
+    return res.status(400).json({
       status: "FAILED",
       message: "Empty input fields!",
     });
-  } else if (!/^[a-zA-Z, ]*$/.test(name)) {
-    res.json({
-      messgae: "Invalid name entered",
-    });
-  } else if (!/^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$/.test(email)) {
-    res.json({
+  }
+
+  if (!/^[a-zA-Z, ]*$/.test(name)) {
+    return res.status(400).json({
       status: "FAILED",
-      messgae: "Invalid email entered",
+      message: "Invalid name entered",
     });
-  } else if (password.length < 8) {
-    res.json({
+  }
+
+  if (!/^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$/.test(email)) {
+    return res.status(400).json({
       status: "FAILED",
-      messgae: "Password is too short",
+      message: "Invalid email entered",
     });
-  } else {
-    //Checking if user already exists
-    User.find({ email })
-      .then((result) => {
-        if (result.length) {
-          // A user already exists
-          res.json({
-            status: "FAILED",
-            messgae: "User with the provided email already exists",
-          });
-        } else {
-          //try to create new user
-          //password handling
-          const saltRounds = 10;
-          bcrypt
-            .hash(password, saltRounds)
-            .then((hashedPassword) => {
-              const newUser = new User({
-                name,
-                email,
-                password: hashedPassword,
-                dateOfBirth,
-                verified: true,
-              });
-              newUser
-                .save()
-                .then((result) => {
-                  //handle account verification
-                  console.log('success')
-                  res.status(200).json({status:"Success"})
-                })
-                .catch((err) => {
-                  res.json({
-                    status: "FAILED",
-                    messgae: "An error occured while saving user account!",
-                  });
-                });
-            })
-            .catch((err) => {
-              console.log(err);
-              res.json({
-                status: "FAILED",
-                messgae: "Invalid name entered",
-              });
-            });
-        }
-      })
-      .catch((err) => {
-        console.log(err);
-        res.json({
-          status: "FAILED",
-          messgae: "An error occurred while checking the existing user!",
-        });
+  }
+
+  if (password.length < 8) {
+    return res.status(400).json({
+      status: "FAILED",
+      message: "Password is too short",
+    });
+  }
+
+  try {
+    const existingUser = await User.findOne({ email });
+
+    if (existingUser) {
+      return res.status(400).json({
+        status: "FAILED",
+        message: "User with the provided email already exists",
       });
+    }
+
+    const saltRounds = 10;
+    const hashedPassword = await bcrypt.hash(password, saltRounds);
+
+    const newUser = new User({
+      name,
+      email,
+      password: hashedPassword,
+      dateOfBirth,
+      verified: true,
+    });
+
+    const result = await newUser.save();
+
+    // handle account verification
+    // sendVerificationEmail(result, res);
+    sendOTPVerificationEmail(result, res); 
+
+    console.log('success');
+    return res.status(200).json({ status: "Success" });
+
+  } catch (err) {
+    console.log(err);
+    return res.status(500).json({
+      status: "FAILED",
+      message: "An error occurred while processing your request.",
+    });
   }
 });
+
+router.post("/signup", async (req, res) => {
+  let { name, email, password, dateOfBirth } = req.body;
+
+  name = name.trim();
+  email = email.trim();
+  password = password.trim();
+  dateOfBirth = dateOfBirth.trim();
+
+  if (name === "" || email === "" || password === "" || dateOfBirth === "") {
+    return res.status(400).json({
+      status: "FAILED",
+      message: "Empty input fields!",
+    });
+  }
+
+  if (!/^[a-zA-Z, ]*$/.test(name)) {
+    return res.status(400).json({
+      status: "FAILED",
+      message: "Invalid name entered",
+    });
+  }
+
+  if (!/^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$/.test(email)) {
+    return res.status(400).json({
+      status: "FAILED",
+      message: "Invalid email entered",
+    });
+  }
+
+  if (password.length < 8) {
+    return res.status(400).json({
+      status: "FAILED",
+      message: "Password is too short",
+    });
+  }
+
+  const parsedDateOfBirth = new Date(dateOfBirth);
+  if (isNaN(parsedDateOfBirth.getTime())) {
+    return res.status(400).json({
+      status: "FAILED",
+      message: "Invalid date of birth entered",
+    });
+  }
+
+  try {
+    const existingUser = await User.findOne({ email });
+
+    if (existingUser) {
+      return res.status(400).json({
+        status: "FAILED",
+        message: "User with the provided email already exists",
+      });
+    }
+
+    const saltRounds = 10;
+    const hashedPassword = await bcrypt.hash(password, saltRounds);
+
+    const newUser = new User({
+      name,
+      email,
+      password: hashedPassword,
+      dateOfBirth: parsedDateOfBirth,
+      verified: false,
+    });
+
+    const result = await newUser.save();
+
+    sendOTPVerificationEmail(result)
+      .then((emailResponse) => {
+        res.status(200).json(emailResponse);
+      })
+      .catch((emailError) => {
+        res.status(500).json({
+          status: "FAILED",
+          message: emailError.message,
+        });
+      });
+
+  } catch (err) {
+    console.log(err);
+    return res.status(500).json({
+      status: "FAILED",
+      message: "An error occurred while processing your request.",
+    });
+  }
+});
+
+
+
+
+module.exports = router;
+
+
+
+//send otp verifiaction email
+// const sendOTPVerificationEmail = async({_id,email},res) =>{
+//   try{
+//     const otp = '{Math.floor(1000 + Math.random() * 9000)}';
+
+//     //mail options
+//     const mailOptions = {
+//       from: process.env.AUTH_EMAIL,
+//       to: email,
+//       subject: "Verify Your Email",
+//       html:'<p>Enter<b>${otp}</b> in the app to verify your email address and complete the process</p><p>This code<b>expires in 1 30 minutes</b></p>',
+//     };
+
+//     //hash the otp
+//     const saltRounds = 10;
+
+//     const hashedOTP = await bcrypt.hash(otp, saltRounds);
+//     new UserOTPVerification({
+//       userId: _id,
+//       otp: hashedOTP,
+//       createdAt: Date.now(),
+//       expiresAt: Date.now() + 1800000,
+//       });
+
+//       //save otp record
+//       await newOTPVerification.save();
+//       await transporter.sendMail(mailOptions);
+//       res.json({
+//         status: "PENDING",
+//         message:"Verification otp email sent",
+//         data: {
+//           userId: _id,
+//           email,
+//         },
+//       })
+
+//   }catch(error){
+//     res.send({
+//       status: "FAILED",
+//       message: error.message,
+//     })
+//   }
+// };
+
+const sendOTPVerificationEmail = async ({ _id, email }) => {
+  try {
+    const otp = `${Math.floor(1000 + Math.random() * 9000)}`;
+
+    // mail options
+    const mailOptions = {
+      from: process.env.AUTH_EMAIL,
+      to: email,
+      subject: "Verify Your Email",
+      html: `<p>Enter <b>${otp}</b> in the app to verify your email address and complete the process.</p><p>This code <b>expires in 30 minutes</b>.</p>`,
+    };
+
+    // hash the otp
+    const saltRounds = 10;
+    const hashedOTP = await bcrypt.hash(otp, saltRounds);
+
+    const newOTPVerification = new UserOTPVerification({
+      userId: _id,
+      otp: hashedOTP,
+      createdAt: Date.now(),
+      expiresAt: Date.now() + 1800000, // 30 minutes
+    });
+
+    // save otp record
+    await newOTPVerification.save();
+    await transporter.sendMail(mailOptions);
+
+    return {
+      status: "PENDING",
+      message: "Verification OTP email sent",
+      data: {
+        userId: _id,
+        email,
+      },
+    };
+  } catch (error) {
+    throw new Error(error.message);
+  }
+};
+
+
+//Verify otp email
+// router.post("/verifyOTP",async (req, res) =>{
+//   try{
+//     let{userId,otp} = req.body;
+//     if(!userId , otp ){
+//       throw Error("Empty otp details are not allowed");
+//     }else{
+//       const UserOTPVerificationRecords = await UserOTPVerification.find({
+//         userId,
+//       });
+//       if(UserOTPVerificationRecords.length <= 0){
+//       //no record found 
+//       throw new Error(
+//         "Account record doesn't exist or has been verified already. Please sign up or log in."
+//       );
+//       }else{
+//         //user otp record exists
+//         const {expiresAt} = UserOTPVerificationRecords[0];
+//         const hashedOTP = UserOTPVerificationRecords[0].otp;
+
+//         if(expiresAt < Date.now()){
+//           //user otp record has expired
+//           await UserOTPVerification.deleteMany({userId});
+//           throw new Error("Code has expired. Please request again");
+//         }else{
+//          const validOTP = await bcrypt.compare(otp, hashedOTP);
+//          if(!validOTP){
+//           //supplied otp is wrong
+//           throw new Error("Invalid code passed. check your inbox");
+//          }else{
+//           //success
+//           await User.updateOne({_id: userId },{verified: true});
+//           await UserOTPVerification.deleteMany({userId});
+//           res.json({
+//             status:"VERIFIED",
+//             message: "User email verified sucessfully.",
+//           })
+//          }
+//         }
+
+//       }
+
+//     }
+//   }catch(error){
+//     res.json({
+//       status: "FAILED",
+//       message: error.message,
+//     });
+
+//   }
+// })
+
+router.post("/verifyOTP", async (req, res) => {
+  try {
+    let { userId, otp } = req.body;
+
+    if (!userId || !otp) {
+      return res.status(400).json({
+        status: "FAILED",
+        message: "Empty OTP details are not allowed",
+      });
+    }
+
+    const UserOTPVerificationRecords = await UserOTPVerification.find({
+      userId,
+    });
+
+    if (UserOTPVerificationRecords.length <= 0) {
+      // No record found
+      return res.status(404).json({
+        status: "FAILED",
+        message: "Account record doesn't exist or has been verified already. Please sign up or log in.",
+      });
+    }
+
+    // User OTP record exists
+    const { expiresAt } = UserOTPVerificationRecords[0];
+    const hashedOTP = UserOTPVerificationRecords[0].otp;
+
+    if (expiresAt < Date.now()) {
+      // User OTP record has expired
+      await UserOTPVerification.deleteMany({ userId });
+      return res.status(410).json({
+        status: "FAILED",
+        message: "Code has expired. Please request again",
+      });
+    }
+
+    const validOTP = await bcrypt.compare(otp, hashedOTP);
+
+    if (!validOTP) {
+      // Supplied OTP is incorrect
+      return res.status(400).json({
+        status: "FAILED",
+        message: "Invalid code passed. Check your inbox",
+      });
+    }
+
+    // Success: Update user verification status
+    await User.updateOne({ _id: userId }, { verified: true });
+    await UserOTPVerification.deleteMany({ userId });
+
+    return res.status(200).json({
+      status: "VERIFIED",
+      message: "User email verified successfully.",
+    });
+
+  } catch (error) {
+    return res.status(500).json({
+      status: "FAILED",
+      message: error.message,
+    });
+  }
+});
+
+module.exports = router;
+
+   
+
+
+
+
+
+
 
 //send verification email
 const sendVerificationEmail = ({ _id, email }, res) => {
@@ -177,7 +480,7 @@ const sendVerificationEmail = ({ _id, email }, res) => {
           transporter
             .sendMail(mailOptions)
             .then(() => {
-              //email sent and verification record sdaved
+              //email sent and verification record saved
               res.json({
                 status: "PENDING",
                 messgae: "Verification email sent",
@@ -206,6 +509,27 @@ const sendVerificationEmail = ({ _id, email }, res) => {
       });
     });
 };
+//resend verification
+router.post("/resendVerificationLink",async(req,res)=>{
+  try{
+      let{userId,uniqueString}=req.params;
+        if(!userId || !email){
+          throw Error("Empty user details are not allowed");
+        }else{
+          //delete existing record and resend
+          await UserVerification.deleteMany({userId});
+          sendVerificationEmail({_id: userId,email},res);
+
+        }
+  }catch(error){
+    res.json({
+      status: "FAILED",
+      message: 'Verification link resend error.${error.message}'
+    })
+
+  }
+
+})
 
 //verify email
 // const User = require('./models/User'); // Import your User model or whatever your model name is
@@ -378,25 +702,27 @@ router.post("/signin", (req, res) => {
   }
 });
 
-//Password reset stuff
+// Password reset stuff
 router.post("/requestPasswordReset", (req, res) => {
   const { email, redirecturl } = req.body;
+  console.log(req.body)
+
+
 
   //checking if email exists
-  User.find({ email })
+  User.findOne({ email })
     .then((data) => {
-      if (data.length) {
+      if (data ) {
         //user exists
-
         //check if user is verified
-        if (!data[0].verified) {
+        if (!data.verified) {
           res.json({
             status: "FAILED",
             messgae: "Email hasn't been verified yet.Check your inbox",
           });
         } else {
           //proceed with email to reset password
-          sendResetEmail(data[0], redirecturl, res);
+          sendResetEmail(data, redirecturl, res);
         }
       } else {
         res.json({
@@ -413,10 +739,50 @@ router.post("/requestPasswordReset", (req, res) => {
       });
     });
 });
+// router.post("/requestPasswordReset", async (req, res) => {
+//   const { email, redirecturl } = req.body;
+//   console.log(req.body);
+
+//   try {
+//     // Checking if email exists
+//     const user = await User.findOne({ email });
+
+//     if (!user) {
+//       return res.json({
+//         status: "FAILED",
+//         message: "No account with the supplied email exists",
+//       });
+//     }
+
+//     // Check if user is verified
+//     if (!user.verified) {
+//       return res.json({
+//         status: "FAILED",
+//         message: "Email hasn't been verified yet. Check your inbox",
+//       });
+//     }
+
+//     // Proceed with email to reset password
+//     await sendResetEmail(user, redirecturl, res);
+
+//   } catch (error) {
+//     console.error(error);
+//     res.json({
+//       status: "FAILED",
+//       message: "An error occurred while checking the existing user!",
+//     });
+//   }
+// });
+
+
+module.exports = router;
 
 //send password reset email
 const sendResetEmail = ({ _id, email }, redirecturl, res) => {
-  const resetString = uuidv4 + _id;
+  const resetString = uuidv4() + _id;
+    const baseURL= "http://localhost:5000"
+
+  
 
   //first we clear all existing reset records
   PasswordReset.deleteMany({ userId: _id })
@@ -429,7 +795,7 @@ const sendResetEmail = ({ _id, email }, redirecturl, res) => {
         from: process.env.AUTH_EMAIL,
         to: email,
         subject: " Password Reset",
-        html: `<p>We heard that you lost the password.</p><p>Don't worry,use the link below to reset it.</p><p>This link <b>expires in 60 minutes</b>.</><p>Press <a href=${
+        html: `<p>We heard that you lost the password.</p><p>Don't worry,use the link below to reset it.</p> "${baseURL}/${_id}/${resetString} "<p>This link <b>expires in 60 minutes</b>.</><p>Press <a href=${
           redirecturl + "/" + _id + "/" + resetString
         }>here</a> to proceed.</p>`,
       };
@@ -489,5 +855,125 @@ const sendResetEmail = ({ _id, email }, redirecturl, res) => {
       });
     });
 };
+
+//Actually reset the password
+router.post("/resetPassword",(req,res)=>{
+  let{userId,resetString,newPassword}=req.body;
+  PasswordReset
+  .find({userId})
+  .then(result=>{
+    if(result.length > 0){
+      //Password reset record exists so we proceed
+
+    const {expiresAt}=result[0];
+    const hashedResetString = result[0].resetString;
+
+    //Checking foer expired reset string
+    if(expiresAt < Date.now()){
+      PasswordReset
+      .deleteOne({userId})
+      .then(() => {
+         //Reset record deleted sucessfully
+      res.json({
+        status: "FAILED",
+        messgae: "Password reset link has expired",
+      })
+      })
+      .catch(error =>{
+        //deletion failed
+      res.json({
+        status: "FAILED",
+        messgae: "Clearing all existing records failed!",
+      });
+        
+      })
+
+    }else{
+      //valid reset record exists so we validate the reset string
+      //First compare the hashed reset string
+      bcrypt
+      .compare(resetString, hashedResetString)
+      .then((result)=>{
+       if(result){
+        //string matched
+        //hash password again
+
+        const saltRounds = 10;
+        bcrypt
+        .hash(newPassword,saltRounds)
+        .then(hashedNewPassword=>{
+          //Update user password
+         User
+         .updateOne({_id: userId},{password:hashedNewPassword})
+         .then(()=> {
+          //Update complete. Now delete reset record
+          PasswordReset
+          .deleteOne({userId})
+          .then(()=>{
+            //both user record and reset record updated
+            res.json({
+              status: "SUCCESS",
+              messgae: "Pssword has been reset sucessfully.",
+            });
+
+          })
+          .catch(error=>{
+            console.log(error);
+            res.json({
+              status: "FAILED",
+              messgae: "An error occured while finalizing password reset",
+            });
+          })
+         })
+         .catch(error=>{
+          console.log(error);
+          res.json({
+            status: "FAILED",
+            messgae: "Updating user password failed!",
+          });
+
+         })
+        })
+        .catch(error=>{
+          console.log(error);
+          res.json({
+            status: "FAILED",
+            messgae: "An error occured while hashing new password",
+          });
+        })
+       }else{
+        //Existing record but incorrect reset string passed
+        res.json({
+          status: "FAILED",
+          messgae: "Invalid password reset details passed.",
+        });
+       }
+      })
+      .catch(error =>{
+        res.json({
+          status: "FAILED",
+          messgae: "Comparing password reset string failed.",
+        });
+      })
+
+    }
+
+    }else{
+      //Password reset record doesn't exist
+      res.json({
+        status:"FAILED",
+        message:"Password reset request not found",
+      })
+    }
+  })
+  .catch(error =>{
+    console.log(error);
+    res.json({
+      status: "FAILED",
+      messgae: "Checking for existing password reset record failed",
+
+  })
+})
+})
 
 module.exports = router;
