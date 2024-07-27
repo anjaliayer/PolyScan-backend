@@ -71,7 +71,7 @@ loadModel();
 // Image preprocessing function
 const preprocessImage = async (buffer) => {
   const imgBuffer = await sharp(buffer)
-    .resize(128, 128) // Resize the image if needed
+    .resize(256, 256) // Resize the image if needed
     .toBuffer();
   const img = tf.node.decodeImage(imgBuffer, 3); // 3 channels for RGB
   const reshapedImg = img.expandDims();
