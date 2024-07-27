@@ -10,9 +10,7 @@ const rateLimit = require("express-rate-limit");
 const compression = require("compression");
 const morgan = require("morgan");
 const UserRouter = require("./api/user");
-const path = require('path')
 
-const { PythonShell } = require('python-shell');
 // Load environment variables from .env file
 dotenv.config();
 
@@ -61,7 +59,7 @@ app.use("/user", UserRouter);
 let model;
 const loadModel = async () => {
   try {
-    const modelPath = "file://model/newModel/model.json";
+    const modelPath = "file://model/latest_model/model.json";
     model = await tf.loadGraphModel(modelPath);
     console.log("Model loaded successfully.");
   } catch (error) {
@@ -108,24 +106,6 @@ app.post("/predict", upload.single("file"), async (req, res) => {
   }
 });
 
-
-app.post('/rf', (req, res) => {
-  const inputData = req.body;
-  const scriptPath = path.resolve(__dirname, './utils/rf.py');
-  console.log('Script path:', scriptPath);
-
-  const options = {
-      mode: 'json',
-      scriptPath: path.resolve(__dirname, './utils'),
-      args: [JSON.stringify(inputData)]
-  };
-
-  PythonShell.run('rf.py', options, (err, results) => {
-      if (err) throw err;
-      res.send(results);
-  });
-});
-// Default route
 app.get("/", (req, res) => {
   res.send("Hi, I'm Fine");
 });
