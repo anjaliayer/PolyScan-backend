@@ -10,7 +10,7 @@ const rateLimit = require("express-rate-limit");
 const compression = require("compression");
 const morgan = require("morgan");
 const UserRouter = require("./api/user");
-
+const axios = require("axios");
 // Load environment variables from .env file
 dotenv.config();
 
@@ -103,6 +103,19 @@ app.post("/predict", upload.single("file"), async (req, res) => {
   } catch (error) {
     console.error("Error:", error);
     res.status(500).send("Error making prediction.");
+  }
+});
+
+app.post('/diagnos', async (req, res) => {
+  console.log(req.body)
+  try {
+      const response = await axios.post('https://surajr2.pythonanywhere.com/predict', {
+          data: req.body.data
+      });
+      res.json(response.data);
+  } catch (error) {
+      console.log(error)
+      res.status(500).send('Error making prediction');
   }
 });
 
